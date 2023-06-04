@@ -8,7 +8,7 @@ import json
 # import openai
 from sys import stdout
 from telethon import TelegramClient
-from telegram import Update
+from telegram import Update, Bot
 from telegram.constants import ParseMode
 from telegram.ext import filters, MessageHandler, ContextTypes, CommandHandler, ApplicationBuilder
 from dotenv import load_dotenv
@@ -59,7 +59,11 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Echo the user message."""
     logger.info("GET - /echo")
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=update.message.text)
+
+    if len(context.args) == 0:
+        await update.effective_message.reply_text(text="echo command requires a message")
+        return
+    await update.effective_message.reply_text(text=context.args[0])
 
 
 async def show_chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -74,17 +78,16 @@ async def set_chat_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         await client.start()
-        me = await client.get_me()
-        logger.info("Me: ")
-        logger.info(me)
-
         if len(context.args) == 0:
             await update.effective_message.reply_text(text="Please provide a chat name")
             return
 
+        target_dialog_title = " ".join(context.args)
+        logger.info("Target dialog title: " + target_dialog_title)
+
         async for dialog in client.iter_dialogs():
             # logger.info("Dialog: " + dialog.title)
-            if dialog.title == context.args[0]:
+            if dialog.title == target_dialog_title:
                 global dialog_id
                 dialog_id = dialog.id
                 logger.info("Set dialog ID as: " + str(dialog_id))
@@ -140,11 +143,12 @@ def summarize_messages(dialog_id, chat_messages, completion_service):
 Your task is to extract key point from a conversation in telegram chat room. \
 
 From the conversation below, delimited by triple quotes, \
-Message is in csv format, each row is a message mainly talking in chinese. \
+Message is in csv format, each row is a message. \
+The message will be in chinese or english. \
 The first column is the msg_id, the second column is the sender id, \
 the third column is the reply message id (will be empty if it doesn't quote and reply to anyone), \
 the fourth column is the message content and the fifth column is the channel_id. \
-please summarize the messages into a few key points, each point is in following format. \
+please summarize the messages into a few key points in traditional chinese, each point is in following format. \
 `<topic_name> (https://t.me/c/<channel_id>/<msg_id>)`. \
 Each topic_name must within 1 or 2 sentences. \
 
@@ -154,13 +158,12 @@ Conversation: ```{chat_messages}```
         # Combine chat_messages into single string
         chats_content = ""
         for chat in chat_messages:
-            if chat['reply_to_msg_id'] == None:
-                chats_content += f"{chat['msg_id']},{chat['sender']},,{remove_whitespace(chat['msg'])}\n"
+            if chat['msg'] is None:
+                continue
+            elif chat['reply_to_msg_id'] == None:
+                chats_content += f"{chat['msg_id']},{chat['sender']},,{remove_whitespace(chat['msg'])},{chat['channel_id']}\n"
             else:
-                chats_content += f"{chat['msg_id']},{chat['sender']},{chat['reply_to_msg_id']},{remove_whitespace(chat['msg'])}\n"
-
-        # logger.info("Chats content: ")
-        # logger.info(chats_content)
+                chats_content += f"{chat['msg_id']},{chat['sender']},{chat['reply_to_msg_id']},{remove_whitespace(chat['msg'])},{chat['channel_id']}\n"
 
         # Get result from AI
         result = completion_service.get_completion(messages=messages)
@@ -182,9 +185,6 @@ async def summarize(update, context, completion_service: CompletionService):
 
     try:
         await client.start()
-        me = await client.get_me()
-        logger.info("Me: ")
-        logger.info(me)
 
         # Get messages from Telegram API
         result = await get_messages_from_telegram_api()
@@ -199,14 +199,6 @@ async def summarize(update, context, completion_service: CompletionService):
 
     # Send back summarized text as a message to user who requested it
     await context.bot.send_message(chat_id=update.effective_chat.id, text=summarized_text_list)
-    # await context.bot.send_message(chat_id=update.effective_chat.id, text=messages)
-    await context.bot.send_message(chat_id=update.effective_chat.id, text="Done")
-
-    # Retrieve recent messages from Telegram API.
-
-    # Summarize the retrieved messages using OpenAI service.
-
-    # Send back summarized text as a message to user who requested it
 
 
 # From https://github.com/python-telegram-bot/python-telegram-bot/blob/master/examples/errorhandlerbot.py
@@ -252,6 +244,7 @@ if __name__ == '__main__':
                     context: summarize(update, context, completion_service)))
     app.add_handler(CommandHandler('set_chat_name', set_chat_name))
     app.add_handler(CommandHandler('show_chats', show_chats))
+    app.add_handler(CommandHandler('echo', echo))
     # app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), echo))
     app.add_error_handler(error_handler)
 
