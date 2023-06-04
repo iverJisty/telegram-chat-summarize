@@ -50,6 +50,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id, text='Hi! I am a summary bot. Invite me into your group and I will summarize them for you.')
 
 
+async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send a help message when the command /help is issued."""
+    logger.info("GET - /help")
+    await context.bot.send_message(chat_id=update.effective_chat.id, text='Following command are available: \n /start - Start the bot \n /help - Show this help message \n /echo [MESSAGE] - Echo the user message \n /show_chats - Show all chats the bot is currently in \n /set_chat_name [CHAT NAME] - Set the chat name for the bot \n /summary - Summarize the chat')
+
+
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Echo the user message."""
     logger.info("GET - /echo")
@@ -241,6 +247,7 @@ if __name__ == '__main__':
 
     # Add handlers
     app.add_handler(CommandHandler('start', start))
+    app.add_handler(CommandHandler('help', help))
     app.add_handler(CommandHandler('summary', lambda update,
                     context: summarize(update, context, completion_service)))
     app.add_handler(CommandHandler('set_chat_name', set_chat_name))
